@@ -1,0 +1,13 @@
+name: Mergebot
+author: Matthew Mukerjee <mukerjee@nefeli.io>
+description: Automatically git rebase a PR and merge it when passing branch protections.
+inputs:
+  github_token:
+    description: Token for the GitHub API.
+    required: true
+runs:
+  using: docker
+  image: Dockerfile
+branding:
+  icon: git-pull-request
+  color: yellow
