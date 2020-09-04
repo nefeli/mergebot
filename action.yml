@@ -7,7 +7,7 @@ inputs:
     required: true
 runs:
   using: docker
-  image: Dockerfile.prebuilt
+  image: docker://docker.pkg.github.com/nefeli/mergebot/mergebot:latest
 branding:
   icon: git-pull-request
   color: yellow
