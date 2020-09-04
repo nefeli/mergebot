@@ -7,7 +7,7 @@ inputs:
     required: true
 runs:
   using: docker
-  image: Dockerfile
+  image: Dockerfile.prebuilt
 branding:
   icon: git-pull-request
   color: yellow
