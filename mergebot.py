@@ -2,9 +2,11 @@
 
 import json
 import os
+import re
 import subprocess
 
 import requests
+from jira import JIRA
 
 from github import Github
 
@@ -155,6 +157,17 @@ def mergebot():
 
     print(f"Merging PR {pr.number}")
     pr.merge(merge_method="rebase")
+
+    # Mark issue as done in JIRA if we have that set up
+    if "INPUT_JIRA_USER_TOKEN" in os.environ:
+        user, token = os.environ["INPUT_JIRA_USER_TOKEN"].split(":")
+        jira = JIRA("https://nefeli.atlassian.net", basic_auth=(user, token))
+        for issue_number in re.findall("\[(.*)\]", pr.title):
+            if issue_number in ["internal", "trivial"]:
+                continue
+            issue = jira.issue(issue_number)
+            transition_id = [k for k, v in jira.transitions(issue) if v == "Done"]
+            jira.transition_issue(issue, transition_id)
 
     # DOGS
     pup = requests.get("https://dog.ceo/api/breeds/image/random").json()["message"]
