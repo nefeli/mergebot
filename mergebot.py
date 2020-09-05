@@ -44,6 +44,7 @@ def mergebot():
         event = json.loads(f.read())
     print(f"event: {event}")
 
+    # get PR number
     if "number" in event:
         pr_num = event["number"]
     elif (
@@ -57,6 +58,7 @@ def mergebot():
         return
     print(f"pr num: {pr_num}")
 
+    # get PR from github REST API
     g = Github(os.environ["INPUT_GITHUB_TOKEN"])
     repo = g.get_repo(os.environ["GITHUB_REPOSITORY"])
     pr = repo.get_pull(pr_num)
@@ -159,20 +161,21 @@ def mergebot():
     pr.merge(merge_method="rebase")
 
     # Mark issue as done in JIRA if we have that set up
-    if os.environ["INPUT_JIRA_USER_TOKEN"]:
-        user, token = os.environ["INPUT_JIRA_USER_TOKEN"].split(":")
-        jira = JIRA(os.environ["INPUT_JIRA_SERVER"], basic_auth=(user, token))
-        for issue_number in re.findall(r"\[(.*)\]", pr.title):
-            print(f"found issue number {issue_number}")
-            if issue_number in ["internal", "trivial"]:
-                continue
-            try:
-                issue = jira.issue(issue_number)
-                transition_id = [k for k, v in jira.transitions(issue) if v == "Done"]
-                jira.transition_issue(issue, transition_id)
-                print(f"transitioned issue number {issue_number} to done")
-            except:  # pylint: disable=bare-except
-                print(f"failed to transition issue number {issue_number} to done")
+    # TODO(mukerjee): verify with folks if we want this
+    # if os.environ["INPUT_JIRA_USER_TOKEN"]:
+    #     user, token = os.environ["INPUT_JIRA_USER_TOKEN"].split(":")
+    #     jira = JIRA(os.environ["INPUT_JIRA_SERVER"], basic_auth=(user, token))
+    #     for issue_number in re.findall(r"\[(.*)\]", pr.title):
+    #         print(f"found issue number {issue_number}")
+    #         if issue_number in ["internal", "trivial"]:
+    #             continue
+    #         try:
+    #             issue = jira.issue(issue_number)
+    #             transition_id = [k for k, v in jira.transitions(issue) if v == "Done"]
+    #             jira.transition_issue(issue, transition_id)
+    #             print(f"transitioned issue number {issue_number} to done")
+    #         except:  # pylint: disable=bare-except
+    #             print(f"failed to transition issue number {issue_number} to done")
 
     # DOGS
     pup = requests.get("https://dog.ceo/api/breeds/image/random").json()["message"]
