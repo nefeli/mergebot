@@ -53,22 +53,31 @@ def mergebot():
     # My PR was just closed/merged, this could make other PRs dirty, update them
     # if they are in the autorebase queue.
     if event["action"] == "closed":
+        print(
+            f"pr {pr.number} was closed/merged. looking for others sharing this base {pr.base.ref}"
+        )
         for p in repo.get_pulls(base=pr.base.ref):
+            print(f"found pr: {p.number}, {labeled_and_open(p)}, {p.mergeable_state}")
             if not labeled_and_open(p) or p.mergeable_state != "behind":
                 continue
             # Just remove and re-add the label. This will kick off an mergebot
             # run against the PR.
+            print(f"kicking pr {p.number} via label {LABEL}")
             p.remove_from_labels(LABEL)
             p.add_to_labels(LABEL)
         return
 
     # Not labeled with the label we care about
     if event["action"] == "labeled" and event["label"]["name"] != LABEL:
+        print(
+            f"pr {pr.number} was just labeled with {event['label']['name']}. not important"
+        )
         return
 
     # check if PR is unlabeled or closed
     print(f"labels: {pr.labels}")
     if not labeled_and_open(pr):
+        print(f"pr {pr.number} is not labeled with {LABEL} or perhaps not open")
         return
 
     # At this point, we're an open PR with the label, and the action that
@@ -85,6 +94,7 @@ def mergebot():
     # check if branch is out-of-date, if so rebase
     if pr.mergeable_state == "behind":
         try:
+            print(f"rebasing pr {pr.number}")
             pr.remove_from_labels(LABEL)
             run(f'git clone git@github.com:{os.environ["GITHUB_REPOSITORY"]}')
             run(f'cd {os.environ["GITHUB_REPOSITORY"].split("/")[1]}')
@@ -92,6 +102,7 @@ def mergebot():
             run(f"git rebase {pr.base.ref} --autosquash")
             run(f"git push --force")
             pr.add_to_labels(LABEL)  # this will kick off a new run
+            print(f"new run should have been kicked off for pr {pr.number}")
         except Exception as e:  # pylint: disable=broad-except
             print(f"rebase failed: {e}")
             give_up(pr, "Rebase failed, check logs")
@@ -126,6 +137,7 @@ def mergebot():
         give_up(pr, "Unknown error when trying to merge, check log")
         return
 
+    print(f"Merging PR {pr.number}")
     pr.merge()
 
     # DOGS
