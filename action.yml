@@ -6,7 +6,9 @@ inputs:
     description: Token for the GitHub API.
     required: true
   jira_user_token:
-    description: Combination of user:token for the JIRA API
+    description: Combination of user:token for the JIRA API.
+  jira_server:
+    description: JIRA API server.
 runs:
   using: docker
   image: docker://ghcr.io/nefeli/mergebot:latest

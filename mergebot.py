@@ -159,9 +159,9 @@ def mergebot():
     pr.merge(merge_method="rebase")
 
     # Mark issue as done in JIRA if we have that set up
-    if "INPUT_JIRA_USER_TOKEN" in os.environ:
+    if os.environ["INPUT_JIRA_USER_TOKEN"]:
         user, token = os.environ["INPUT_JIRA_USER_TOKEN"].split(":")
-        jira = JIRA("https://nefeli.atlassian.net", basic_auth=(user, token))
+        jira = JIRA(os.environ["INPUT_JIRA_SERVER"], basic_auth=(user, token))
         for issue_number in re.findall("\[(.*)\]", pr.title):
             if issue_number in ["internal", "trivial"]:
                 continue
