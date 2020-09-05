@@ -12,8 +12,7 @@ LABEL = "bug"
 
 ERROR_COMMENT = """<h2><p align="center">:construction: :construction_worker: :fire: Giving up on autorebase, please investigate: :fire: :construction_worker: :construction:</p>
 
-    <p align="center">:rotating_light: {} :rotating_light:</p></h2>
-
+<p align="center">:rotating_light: {} :rotating_light:</p></h2>
 """
 
 
@@ -28,7 +27,8 @@ def give_up(pr, err):
 
 
 def run(cmd):
-    subprocess.check_call(cmd, shell=True)
+    print(f"running: {cmd}")
+    print(subprocess.check_output(cmd, shell=True))
 
 
 def labeled_and_open(pr):
@@ -93,14 +93,20 @@ def mergebot():
 
     # check if branch is out-of-date, if so rebase
     if pr.mergeable_state == "behind":
+        run(
+            'git config --global user.email "nefeli-mergebot[bot]@users.noreply.github.com"'
+        )
+        run('git config --global user.name "nefeli-mergebot[bot]"')
         try:
             print(f"rebasing pr {pr.number}")
             pr.remove_from_labels(LABEL)
-            run(f'git clone git@github.com:{os.environ["GITHUB_REPOSITORY"]}')
-            run(f'cd {os.environ["GITHUB_REPOSITORY"].split("/")[1]}')
-            run(f"git checkout {pr.head.ref}")
-            run(f"git rebase {pr.base.ref} --autosquash")
-            run(f"git push --force")
+            run(
+                f'git clone https://x-access-token:{os.environ["INPUT_GITHUB_TOKEN"]}@github.com/{os.environ["GITHUB_REPOSITORY"]}.git'
+            )
+            dir = os.environ["GITHUB_REPOSITORY"].split("/")[1]
+            run(f"cd {dir} && git checkout {pr.head.ref}")
+            run(f"cd {dir} && git rebase {pr.base.ref} --autosquash")
+            run(f"cd {dir} && git push --force")
             pr.add_to_labels(LABEL)  # this will kick off a new run
             print(f"new run should have been kicked off for pr {pr.number}")
         except Exception as e:  # pylint: disable=broad-except
