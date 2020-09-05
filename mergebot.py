@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
+import json
 import os
 import subprocess
-import sys
 
 import requests
 
@@ -18,23 +18,31 @@ ERROR_COMMENT = """<h2><p align="center">:construction: :construction_worker: :f
 
 
 def give_up(pr, err):
-    print(f"giving up...writing comment on PR: {err}")
+    print(f"giving up...writing comment on PR {pr.number}: {err}")
     pr.create_issue_comment(ERROR_COMMENT.format(err))
-    print(f"removing {LABEL} label on PR")
+    print(f"removing {LABEL} label on PR {pr.number}")
     try:
         pr.remove_from_labels(LABEL)
     except:  # pylint: disable=bare-except
-        print("label was already removed?")
-    sys.exit(-1)
+        print(f"label was already removed on pr {pr.number}?")
 
 
 def run(cmd):
     subprocess.check_call(cmd, shell=True)
 
 
+def labeled_and_open(pr):
+    return [l for l in pr.labels if l.name == LABEL] and not pr.closed_at
+
+
 def mergebot():
     print(f"env: {os.environ}")
-    pr_num = int(os.environ["GITHUB_REF"].split("pull/")[1].split("/")[0])
+
+    with open(os.environ["GITHUB_EVENT_PATH"]) as f:
+        event = json.loads(f.read())
+    print(f"event: {event}")
+
+    pr_num = event["number"]
     print(f"pr num: {pr_num}")
 
     g = Github(os.environ["INPUT_GITHUB_TOKEN"])
@@ -42,16 +50,37 @@ def mergebot():
     pr = repo.get_pull(pr_num)
     print(f"pr title: {pr.title}")
 
+    # My PR was just closed/merged, this could make other PRs dirty, update them
+    # if they are in the autorebase queue.
+    if event["action"] == "closed":
+        for p in repo.get_pulls(base=pr.base.ref):
+            if not labeled_and_open(p) or p.mergeable_state != "behind":
+                continue
+            # Just remove and re-add the label. This will kick off an mergebot
+            # run against the PR.
+            p.remove_from_labels(LABEL)
+            p.add_to_labels(LABEL)
+        return
+
+    # Not labeled with the label we care about
+    if event["action"] == "labeled" and event["label"]["name"] != LABEL:
+        return
+
     # check if PR is unlabeled or closed
     print(f"labels: {pr.labels}")
-    if not [l for l in pr.labels if l.name == LABEL] or pr.closed_at:
+    if not labeled_and_open(pr):
         return
+
+    # At this point, we're an open PR with the label, and the action that
+    # started this run was either a labeling of the correct label, a check_run
+    # completed, a review submitted, or a status change.
 
     print(f"mergeable state: {pr.mergeable_state}")
 
     # check if branch is out-of-date and has conflicting files
     if pr.mergeable_state == "dirty":
         give_up(pr, "Conflicting files")
+        return
 
     # check if branch is out-of-date, if so rebase
     if pr.mergeable_state == "behind":
@@ -62,19 +91,22 @@ def mergebot():
             run(f"git checkout {pr.head.ref}")
             run(f"git rebase {pr.base.ref} --autosquash")
             run(f"git push --force")
-            pr.add_to_labels(LABEL)
+            pr.add_to_labels(LABEL)  # this will kick off a new run
         except Exception as e:  # pylint: disable=broad-except
             print(f"rebase failed: {e}")
             give_up(pr, "Rebase failed, check logs")
+        return
 
+    # check if PR is blocked for some reason (e.g., behind CI or reviews)
     if pr.mergeable_state == "blocked":
-        # check if mergestate is blocked by failed status checks
+        # check if mergestate is blocked by failed status checks (CI)
         status = repo.get_commit(pr.head.sha).get_combined_status()
         print(f"status_checks: {status}")
         if status.state == "failure":
-            give_up(pr, "Blocked by jenkins")
-        elif status.state == "pending":
-            print("jenkins still pending... letting jenkins finish")
+            give_up(pr, "Blocked by CI")
+            return
+        if status.state == "pending":
+            print("CI still pending... letting CI finish")
             return
 
         # check if mergestate is blocked by review (need at least 1 passing
@@ -83,13 +115,16 @@ def mergebot():
         print(f"reviews: {reviews}")
         if reviews.totalCount == 0 or not [r for r in reviews if r.state == "APPROVED"]:
             give_up(pr, "Wait for reviews")
+            return
 
         if [r for r in reviews if r.state == "CHANGES_REQUESTED"]:
             give_up(pr, "Address reviewer comments")
+            return
 
     # check if branch is mergeable, if so merge
     if not pr.mergeable:
         give_up(pr, "Unknown error when trying to merge, check log")
+        return
 
     pr.merge()
 
