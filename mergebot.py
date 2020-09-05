@@ -42,9 +42,17 @@ def mergebot():
         event = json.loads(f.read())
     print(f"event: {event}")
 
-    pr_num = (
-        event["number"] if "number" in event else event["pull_requests"][0]["number"]
-    )
+    if "number" in event:
+        pr_num = event["number"]
+    elif (
+        "workflow_run" in event
+        and "pull_requests" in event["workflow_run"]
+        and event["workflow_run"]["pull_requests"]
+    ):
+        pr_num = event["workflow_run"]["pull_requests"][0]["number"]
+    else:
+        print("no pull requests in this event...")
+        return
     print(f"pr num: {pr_num}")
 
     g = Github(os.environ["INPUT_GITHUB_TOKEN"])
@@ -146,7 +154,7 @@ def mergebot():
         return
 
     print(f"Merging PR {pr.number}")
-    pr.merge()
+    pr.merge(merge_method="rebase")
 
     # DOGS
     pup = requests.get("https://dog.ceo/api/breeds/image/random").json()["message"]
