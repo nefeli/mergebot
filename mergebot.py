@@ -162,12 +162,17 @@ def mergebot():
     if os.environ["INPUT_JIRA_USER_TOKEN"]:
         user, token = os.environ["INPUT_JIRA_USER_TOKEN"].split(":")
         jira = JIRA(os.environ["INPUT_JIRA_SERVER"], basic_auth=(user, token))
-        for issue_number in re.findall("\[(.*)\]", pr.title):
+        for issue_number in re.findall(r"\[(.*)\]", pr.title):
+            print(f"found issue number {issue_number}")
             if issue_number in ["internal", "trivial"]:
                 continue
-            issue = jira.issue(issue_number)
-            transition_id = [k for k, v in jira.transitions(issue) if v == "Done"]
-            jira.transition_issue(issue, transition_id)
+            try:
+                issue = jira.issue(issue_number)
+                transition_id = [k for k, v in jira.transitions(issue) if v == "Done"]
+                jira.transition_issue(issue, transition_id)
+                print(f"transitioned issue number {issue_number} to done")
+            except:  # pylint: disable=bare-except
+                print(f"failed to transition issue number {issue_number} to done")
 
     # DOGS
     pup = requests.get("https://dog.ceo/api/breeds/image/random").json()["message"]
