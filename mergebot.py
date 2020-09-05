@@ -42,7 +42,9 @@ def mergebot():
         event = json.loads(f.read())
     print(f"event: {event}")
 
-    pr_num = event["number"]
+    pr_num = (
+        event["number"] if "number" in event else event["pull_requests"][0]["number"]
+    )
     print(f"pr num: {pr_num}")
 
     g = Github(os.environ["INPUT_GITHUB_TOKEN"])
