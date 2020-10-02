@@ -10,20 +10,22 @@ from jira import JIRA
 
 from github import Github
 
-LABEL = "bug"
+LABEL = "merge-it"
+LABEL_CLOSE = "merge-it-and-close"
 
-ERROR_COMMENT = """<h2><p align="center">:construction: :construction_worker: :fire: Giving up on autorebase, please investigate: :fire: :construction_worker: :construction:</p>
-
-<p align="center">:rotating_light: {} :rotating_light:</p></h2>
-"""
+ERROR_COMMENT = ":rotating_light: <b>Giving up on autorebase:</b> {}"
 
 
 def give_up(pr, err):
     print(f"giving up...writing comment on PR {pr.number}: {err}")
     pr.create_issue_comment(ERROR_COMMENT.format(err))
-    print(f"removing {LABEL} label on PR {pr.number}")
+    print(f"removing {LABEL} and {LABEL_CLOSE} labels on PR {pr.number}")
     try:
         pr.remove_from_labels(LABEL)
+    except:  # pylint: disable=bare-except
+        print(f"label was already removed on pr {pr.number}?")
+    try:
+        pr.remove_from_labels(LABEL_CLOSE)
     except:  # pylint: disable=bare-except
         print(f"label was already removed on pr {pr.number}?")
 
@@ -34,7 +36,28 @@ def run(cmd):
 
 
 def labeled_and_open(pr):
-    return [l for l in pr.labels if l.name == LABEL] and not pr.closed_at
+    labels = [l.name for l in pr.labels]
+    return (LABEL in labels or LABEL_CLOSE in labels) and not pr.closed_at
+
+
+def rebase(pr):
+    run(
+        'git config --global user.email "nefeli-mergebot[bot]@users.noreply.github.com"'
+    )
+    run('git config --global user.name "nefeli-mergebot[bot]"')
+    try:
+        print(f"rebasing pr {pr.number}")
+        run(
+            f'git clone https://x-access-token:{os.environ["INPUT_GITHUB_TOKEN"]}@github.com/{os.environ["GITHUB_REPOSITORY"]}.git'
+        )
+        d = os.environ["GITHUB_REPOSITORY"].split("/")[1]
+        run(f"cd {d} && git checkout {pr.head.ref}")
+        run(f"cd {d} && git rebase {pr.base.ref} --autosquash")
+        run(f"cd {d} && git push --force")
+        print(f"new CI run should have been kicked off for pr {pr.number}")
+    except Exception as e:  # pylint: disable=broad-except
+        print(f"rebase failed: {e}")
+        give_up(pr, "Rebase failed, check logs")
 
 
 def mergebot():
@@ -74,24 +97,16 @@ def mergebot():
             print(f"found pr: {p.number}, {labeled_and_open(p)}, {p.mergeable_state}")
             if not labeled_and_open(p) or p.mergeable_state != "behind":
                 continue
-            # Just remove and re-add the label. This will kick off an mergebot
-            # run against the PR.
-            print(f"kicking pr {p.number} via label {LABEL}")
-            p.remove_from_labels(LABEL)
-            p.add_to_labels(LABEL)
-        return
-
-    # Not labeled with the label we care about
-    if event["action"] == "labeled" and event["label"]["name"] != LABEL:
-        print(
-            f"pr {pr.number} was just labeled with {event['label']['name']}. not important"
-        )
+            p.create_issue_comment(f"PR #{pr_num} was just merged/closed. Rebasing...")
+            rebase(p)
         return
 
     # check if PR is unlabeled or closed
     print(f"labels: {pr.labels}")
     if not labeled_and_open(pr):
-        print(f"pr {pr.number} is not labeled with {LABEL} or perhaps not open")
+        print(
+            f"pr {pr.number} is not labeled with {LABEL} or {LABEL_CLOSE} or perhaps not open"
+        )
         return
 
     # At this point, we're an open PR with the label, and the action that
@@ -107,29 +122,23 @@ def mergebot():
 
     # check if branch is out-of-date, if so rebase
     if pr.mergeable_state == "behind":
-        run(
-            'git config --global user.email "nefeli-mergebot[bot]@users.noreply.github.com"'
-        )
-        run('git config --global user.name "nefeli-mergebot[bot]"')
-        try:
-            print(f"rebasing pr {pr.number}")
-            pr.remove_from_labels(LABEL)
-            run(
-                f'git clone https://x-access-token:{os.environ["INPUT_GITHUB_TOKEN"]}@github.com/{os.environ["GITHUB_REPOSITORY"]}.git'
-            )
-            dir = os.environ["GITHUB_REPOSITORY"].split("/")[1]
-            run(f"cd {dir} && git checkout {pr.head.ref}")
-            run(f"cd {dir} && git rebase {pr.base.ref} --autosquash")
-            run(f"cd {dir} && git push --force")
-            pr.add_to_labels(LABEL)  # this will kick off a new run
-            print(f"new run should have been kicked off for pr {pr.number}")
-        except Exception as e:  # pylint: disable=broad-except
-            print(f"rebase failed: {e}")
-            give_up(pr, "Rebase failed, check logs")
+        rebase(pr)
         return
 
     # check if PR is blocked for some reason (e.g., behind CI or reviews)
     if pr.mergeable_state == "blocked":
+        # check if mergestate is blocked by review (need at least 1 passing
+        # review + no failing reviews)
+        reviews = pr.get_reviews()
+        print(f"reviews: {reviews}")
+        if not [r for r in reviews if r.state == "APPROVED"]:
+            give_up(pr, "Wait for reviews")
+            return
+
+        if [r for r in reviews if r.state == "CHANGES_REQUESTED"]:
+            give_up(pr, "Address reviewer comments")
+            return
+
         # check if mergestate is blocked by failed status checks (CI)
         status = repo.get_commit(pr.head.sha).get_combined_status()
         print(f"status_checks: {status}")
@@ -140,18 +149,6 @@ def mergebot():
             print("CI still pending... letting CI finish")
             return
 
-        # check if mergestate is blocked by review (need at least 1 passing
-        # review + no failing reviews)
-        reviews = pr.get_reviews()
-        print(f"reviews: {reviews}")
-        if reviews.totalCount == 0 or not [r for r in reviews if r.state == "APPROVED"]:
-            give_up(pr, "Wait for reviews")
-            return
-
-        if [r for r in reviews if r.state == "CHANGES_REQUESTED"]:
-            give_up(pr, "Address reviewer comments")
-            return
-
     # check if branch is mergeable, if so merge
     if not pr.mergeable:
         give_up(pr, "Unknown error when trying to merge, check log")
@@ -160,26 +157,26 @@ def mergebot():
     print(f"Merging PR {pr.number}")
     pr.merge(merge_method="rebase")
 
-    # Mark issue as done in JIRA if we have that set up
-    # TODO(mukerjee): verify with folks if we want this
-    # if os.environ["INPUT_JIRA_USER_TOKEN"]:
-    #     user, token = os.environ["INPUT_JIRA_USER_TOKEN"].split(":")
-    #     jira = JIRA(os.environ["INPUT_JIRA_SERVER"], basic_auth=(user, token))
-    #     for issue_number in re.findall(r"\[(.*)\]", pr.title):
-    #         print(f"found issue number {issue_number}")
-    #         if issue_number in ["internal", "trivial"]:
-    #             continue
-    #         try:
-    #             issue = jira.issue(issue_number)
-    #             transition_id = [k for k, v in jira.transitions(issue) if v == "Done"]
-    #             jira.transition_issue(issue, transition_id)
-    #             print(f"transitioned issue number {issue_number} to done")
-    #         except:  # pylint: disable=bare-except
-    #             print(f"failed to transition issue number {issue_number} to done")
-
     # DOGS
     pup = requests.get("https://dog.ceo/api/breeds/image/random").json()["message"]
     pr.create_issue_comment(f'<p align="center"><img src="{pup}"></p>')
+
+    # Mark issue as done in JIRA if we have that set up
+    labels = [l.name for l in pr.labels]
+    if LABEL_CLOSE in labels and os.environ["INPUT_JIRA_USER_TOKEN"]:
+        user, token = os.environ["INPUT_JIRA_USER_TOKEN"].split(":")
+        jira = JIRA(os.environ["INPUT_JIRA_SERVER"], basic_auth=(user, token))
+        for issue_number in re.findall(r"\[(.*)\]", pr.title):
+            print(f"found issue number {issue_number}")
+            if issue_number in ["internal", "trivial"]:
+                continue
+            try:
+                issue = jira.issue(issue_number)
+                transition_id = [k for k, v in jira.transitions(issue) if v == "Done"]
+                jira.transition_issue(issue, transition_id)
+                print(f"transitioned issue number {issue_number} to done")
+            except:  # pylint: disable=bare-except
+                print(f"failed to transition issue number {issue_number} to done")
 
 
 if __name__ == "__main__":
