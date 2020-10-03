@@ -67,6 +67,9 @@ def mergebot():
         event = json.loads(f.read())
     print(f"event: {event}")
 
+    g = Github(os.environ["INPUT_GITHUB_TOKEN"])
+    repo = g.get_repo(os.environ["GITHUB_REPOSITORY"])
+
     # get PR number
     if "number" in event:
         pr_num = event["number"]
@@ -76,14 +79,17 @@ def mergebot():
         and event["workflow_run"]["pull_requests"]
     ):
         pr_num = event["workflow_run"]["pull_requests"][0]["number"]
+    elif "branches" in event:
+        branch_name = event["branches"][0]["name"]
+        pr_num = repo.get_pulls(
+            head=f"{os.environ['GITHUB_REPOSITORY_OWNER']}:{branch_name}"
+        )[0].number
     else:
         print("no pull requests in this event...")
         return
     print(f"pr num: {pr_num}")
 
     # get PR from github REST API
-    g = Github(os.environ["INPUT_GITHUB_TOKEN"])
-    repo = g.get_repo(os.environ["GITHUB_REPOSITORY"])
     pr = repo.get_pull(pr_num)
     print(f"pr title: {pr.title}")
 
