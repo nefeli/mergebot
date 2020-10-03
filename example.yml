@@ -1,0 +1,38 @@
+# modified from https://github.com/nefeli/autosquash/blob/master/.github/workflows/autosquash.yml
+name: Mergebot
+on:
+  check_suite:
+    types:
+      # Check suite completing successfully can unblock the
+      # corresponding pull requests and make them mergeable.
+      - completed
+  pull_request:
+    types:
+      # A closed pull request makes the checks on the other
+      # pull request on the same base outdated.
+      - closed
+      # Adding the merge-it label to a pull request can
+      # trigger an update or a merge.
+      - labeled
+
+jobs:
+  mergebot:
+    name: Mergebot
+    runs-on: ubuntu-18.04
+    steps:
+      - name: Generate token
+        id: generate_token
+        uses: tibdex/github-app-token@v1
+        with:
+          app_id: ${{ secrets.MERGEBOT_APP_ID }}
+          private_key: ${{ secrets.MERGEBOT_PRIVATE_KEY }}
+      - uses: nefeli/mergebot@master
+        with:
+          # We can't use the built-in secrets.GITHUB_TOKEN yet because of this limitation:
+          # https://github.community/t5/GitHub-Actions/Triggering-a-new-workflow-from-another-workflow/td-p/31676
+          # In the meantime, use a token granting write access on the repo:
+          # - a GitHub App token
+          #   See https://github.com/marketplace/actions/github-app-token.
+          # - a personal access token
+          #   See https://help.github.com/en/articles/creating-a-personal-access-token-for-the-command-line.
+          github_token: ${{ steps.generate_token.outputs.token }}
