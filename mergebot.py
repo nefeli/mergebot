@@ -2,16 +2,13 @@
 
 import json
 import os
-import re
 import subprocess
 
 import requests
-from jira import JIRA
 
 from github import Github
 
 LABEL = "merge-it"
-LABEL_CLOSE = "merge-it-and-close"
 
 ERROR_COMMENT = ":rotating_light: <b>Giving up on autorebase:</b> {}"
 
@@ -19,13 +16,9 @@ ERROR_COMMENT = ":rotating_light: <b>Giving up on autorebase:</b> {}"
 def give_up(pr, err):
     print(f"giving up...writing comment on PR {pr.number}: {err}")
     pr.create_issue_comment(ERROR_COMMENT.format(err))
-    print(f"removing {LABEL} and {LABEL_CLOSE} labels on PR {pr.number}")
+    print(f"removing {LABEL} label on PR {pr.number}")
     try:
         pr.remove_from_labels(LABEL)
-    except:  # pylint: disable=bare-except
-        print(f"label was already removed on pr {pr.number}?")
-    try:
-        pr.remove_from_labels(LABEL_CLOSE)
     except:  # pylint: disable=bare-except
         print(f"label was already removed on pr {pr.number}?")
 
@@ -36,8 +29,7 @@ def run(cmd):
 
 
 def labeled_and_open(pr):
-    labels = [l.name for l in pr.labels]
-    return (LABEL in labels or LABEL_CLOSE in labels) and not pr.closed_at
+    return LABEL in [l.name for l in pr.labels] and not pr.closed_at
 
 
 def rebase(pr):
@@ -110,9 +102,7 @@ def mergebot():
     # check if PR is unlabeled or closed
     print(f"labels: {pr.labels}")
     if not labeled_and_open(pr):
-        print(
-            f"pr {pr.number} is not labeled with {LABEL} or {LABEL_CLOSE} or perhaps not open"
-        )
+        print(f"pr {pr.number} is not labeled with {LABEL} or perhaps not open")
         return
 
     # At this point, we're an open PR with the label, and the action that
@@ -166,23 +156,6 @@ def mergebot():
     # DOGS
     pup = requests.get("https://dog.ceo/api/breeds/image/random").json()["message"]
     pr.create_issue_comment(f'<p align="center"><img src="{pup}"></p>')
-
-    # Mark issue as done in JIRA if we have that set up
-    labels = [l.name for l in pr.labels]
-    if LABEL_CLOSE in labels and os.environ["INPUT_JIRA_USER_TOKEN"]:
-        user, token = os.environ["INPUT_JIRA_USER_TOKEN"].split(":")
-        jira = JIRA(os.environ["INPUT_JIRA_SERVER"], basic_auth=(user, token))
-        for issue_number in re.findall(r"\[(.*)\]", pr.title):
-            print(f"found issue number {issue_number}")
-            if issue_number in ["internal", "trivial"]:
-                continue
-            try:
-                issue = jira.issue(issue_number)
-                transition_id = [k for k, v in jira.transitions(issue) if v == "Done"]
-                jira.transition_issue(issue, transition_id)
-                print(f"transitioned issue number {issue_number} to done")
-            except:  # pylint: disable=bare-except
-                print(f"failed to transition issue number {issue_number} to done")
 
 
 if __name__ == "__main__":
