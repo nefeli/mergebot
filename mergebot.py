@@ -87,7 +87,7 @@ def mergebot():
 
     # My PR was just closed/merged, this could make other PRs dirty, update them
     # if they are in the autorebase queue.
-    if event["action"] == "closed":
+    if "action" in event and event["action"] == "closed":
         print(
             f"pr {pr.number} was closed/merged. looking for others sharing this base {pr.base.ref}"
         )
