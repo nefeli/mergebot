@@ -93,7 +93,7 @@ def mergebot():
         )
         for p in repo.get_pulls(base=pr.base.ref):
             print(f"found pr: {p.number}, {labeled_and_open(p)}, {p.mergeable_state}")
-            if not labeled_and_open(p) or p.mergeable_state != "behind":
+            if not labeled_and_open(p):
                 continue
             p.create_issue_comment(f"PR #{pr_num} was just merged/closed. Rebasing...")
             rebase(p)
