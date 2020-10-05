@@ -39,10 +39,12 @@ def rebase(pr):
     run('git config --global user.name "nefeli-mergebot[bot]"')
     try:
         print(f"rebasing pr {pr.number}")
-        run(
-            f'git clone https://x-access-token:{os.environ["INPUT_GITHUB_TOKEN"]}@github.com/{os.environ["GITHUB_REPOSITORY"]}.git'
-        )
-        d = os.environ["GITHUB_REPOSITORY"].split("/")[1]
+        repo = os.environ["GITHUB_REPOSITORY"]
+        d = repo.split("/")[1]
+        if not os.path.isdir(d):
+            run(
+                f'git clone https://x-access-token:{os.environ["INPUT_GITHUB_TOKEN"]}@github.com/{repo}.git'
+            )
         run(f"cd {d} && git checkout {pr.head.ref}")
         run(f"cd {d} && git rebase {pr.base.ref} --autosquash")
         run(f"cd {d} && git push --force")
