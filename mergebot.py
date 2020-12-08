@@ -45,6 +45,7 @@ def rebase(pr):
             run(
                 f'git clone https://x-access-token:{os.environ["INPUT_GITHUB_TOKEN"]}@github.com/{repo}.git'
             )
+        run(f"cd {d} && git checkout {pr.base.ref}")
         run(f"cd {d} && git checkout {pr.head.ref}")
         run(f"cd {d} && git rebase {pr.base.ref} --autosquash")
         run(f"cd {d} && git push --force")
