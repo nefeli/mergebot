@@ -74,7 +74,7 @@ def mergebot():
         and event["workflow_run"]["pull_requests"]
     ):
         pr_num = event["workflow_run"]["pull_requests"][0]["number"]
-    elif "branches" in event:
+    elif "branches" in event and event["branches"]:
         branch_name = event["branches"][0]["name"]
         pr_num = repo.get_pulls(
             head=f"{os.environ['GITHUB_REPOSITORY_OWNER']}:{branch_name}"
