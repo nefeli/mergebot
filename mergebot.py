@@ -79,7 +79,7 @@ def mergebot():
         pr = repo.get_pulls(
             head=f"{os.environ['GITHUB_REPOSITORY_OWNER']}:{branch_name}"
         )
-        if not pr:
+        if len(pr) == 0:
             print("no pull requests in this event...")
             return
         pr_num = pr[0].number
